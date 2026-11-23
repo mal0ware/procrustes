@@ -62,10 +62,10 @@ Sharpe ratios are per observation unless stated. Kurtosis is the raw fourth mome
 import numpy as np
 import procrustes as pc
 
-returns = np.random.default_rng(0).standard_normal((1260, 200)) * 0.01   # T x N trials
+returns = np.random.default_rng(0).standard_normal((1260, 200)) * 0.01  # T x N trials
 
-pc.deflated_sharpe_ratio_from_returns(returns).dsr     # best column, deflated for 200 trials
-pc.cscv(returns, n_blocks=16).pbo                      # probability of backtest overfitting
+pc.deflated_sharpe_ratio_from_returns(returns).dsr  # best column, deflated for 200 trials
+pc.cscv(returns, n_blocks=16).pbo  # probability of backtest overfitting
 ```
 
 ### Sharpe ratio inference (`procrustes.sharpe`)
@@ -113,7 +113,7 @@ pc.cscv(returns, n_blocks=16).pbo                      # probability of backtest
 ```python
 cv = pc.CombinatorialPurgedKFold(6, 2, label_start=t0, label_end=t1, embargo=5)
 forecasts = [model.fit(X[train], y[train]).predict(X[test]) for train, test in cv.split(X)]
-paths = cv.backtest_paths(forecasts)          # shape (5, n_samples)
+paths = cv.backtest_paths(forecasts)  # shape (5, n_samples)
 ```
 
 ### Multiple testing (`procrustes.multiple_testing`)
