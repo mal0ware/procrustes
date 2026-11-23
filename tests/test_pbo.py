@@ -40,7 +40,7 @@ def test_pbo_is_half_on_pure_noise() -> None:
 def test_pbo_is_near_zero_with_real_drift() -> None:
     """One strategy with a per-observation Sharpe ratio of 0.3 (t-statistic about 9.5)."""
     pbo = _pbo_sample(0.3, 50, seed=202)
-    assert pbo.max() < 0.01
+    assert pbo.max() < 0.02
 
 
 def test_pbo_falls_as_drift_grows() -> None:

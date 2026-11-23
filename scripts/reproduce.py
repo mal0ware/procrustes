@@ -438,7 +438,7 @@ def paper_examples(out: Path) -> None:
     write_md(
         out / "paper_examples.md",
         ["Source", "Quantity", "Paper", "This library"],
-        [[s, q, p, f"{v:,.0f}" if v > 1000 else f"{v:.4g}"] for s, q, p, v in rows],
+        [[s, q, p, f"{v:,.0f}" if v > 1000 else f"{v:.5g}"] for s, q, p, v in rows],
     )
 
 
@@ -495,11 +495,10 @@ def figures(out: Path, h: dict[str, Any], n_strategies: int) -> None:
         pbo_n.is_performance * ann, pbo_n.oos_performance * ann, s=3, color=BLUE, alpha=0.25, lw=0
     )
     ax2.axhline(0, color=GREY, lw=1)
-    ax2.set_xlabel("In-sample Sharpe ratio of the in-sample winner (annualised)")
+    ax2.set_xlabel(f"In-sample Sharpe ratio of the winner, {pbo_n.n_combinations:,} CSCV splits")
     ax2.set_ylabel("Its out-of-sample Sharpe ratio (annualised)")
     ax2.set_title(
-        f"{pbo_n.n_combinations:,} CSCV splits: PBO {pbo_n.pbo:.2f}, "
-        f"{pbo_n.prob_oos_loss:.0%} lose out of sample",
+        f"The winner out of sample: PBO {pbo_n.pbo:.2f}, {pbo_n.prob_oos_loss:.0%} lose",
         loc="left",
     )
     fig.tight_layout()
@@ -528,7 +527,7 @@ def figures(out: Path, h: dict[str, Any], n_strategies: int) -> None:
         "Logit of the out-of-sample rank of the in-sample winner (below 0 = below the median)"
     )
     ax.set_ylabel("Number of CSCV splits")
-    ax.legend(frameon=False, fontsize=9)
+    ax.legend(frameon=False, fontsize=9, loc="upper left")
     fig.tight_layout()
     fig.savefig(out / "pbo_logits.png")
     plt.close(fig)

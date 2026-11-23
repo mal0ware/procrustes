@@ -179,3 +179,67 @@ Points I could not check against the book:
 1. Intervals are treated as closed, so a training label that ends at the instant a test label starts counts as overlapping. My recollection is that the book states three overlap conditions with weak inequalities, which is the same thing, but its reference code keeps a training label that ends exactly at the test start. Closed intervals are the conservative reading.
 2. The embargo is applied only after a test block, as both secondary sources describe. The embargo size is in samples. My recollection is that the book suggests about 1% of the sample; no default is taken from it here (the default embargo is zero).
 3. The rule for which split feeds which path is the one shown in the secondary sources' `N = 6, k = 2` table. Any rule that uses each (split, group) pair once gives the same set of out-of-sample forecasts, arranged into paths differently.
+
+## 8. Comparison with the sources
+
+`scripts/reproduce.py` writes every worked number I found in the sources next to the value this library computes, in `results/paper_examples.md`. The tests in `tests/` assert the same values.
+
+Thirty quantities are compared. Twenty-seven agree to the precision the sources print. Three do not:
+
+| Source | Quantity | Paper | Here | Likely reason |
+|---|---|---|---|---|
+| BLdP14 Exhibit 3.1 | Error of the expected-maximum formula at N = 1,000 | "as small as 0.006" | 0.0137 | The paper measured the error against a simulation of 10,000 draws per cell. I compared with the exact integral of `x·N·φ(x)·Φ(x)^(N-1)`. At N = 1,000 the maximum has a standard deviation of about 0.35, so the paper's simulated mean carries a standard error near 0.0035 and a reading of 0.006 is within about two standard errors of 0.0137. The paper's other claim, an error under 0.05 for small N, holds: 0.036 at N = 10 and 0.023 at N = 100. |
+| BBLZ17 eq. (2.3) | Number of CSCV splits at S = 16 | 12,780 | 12,870 | Transposed digits in the paper. `C(16, 8) = 12,870`. |
+| HLZ16 Table 4 | Holm discoveries among the ten example tests | 4 | 6 when computed from the t-statistics, 4 when computed from the printed p-values | Test 6 has `t = 2.64`. The table prints its p-value as 0.84%, which is above Holm's fifth threshold of 0.8333%, so Holm stops there. The two-sided Normal p-value of 2.64 is 0.829%, which is below the threshold, so Holm continues and also rejects tests 6 and 2. The printed p-values were presumably computed from unrounded t-statistics. Bonferroni (3) and BHY (6) agree either way. |
+
+The approximation error in the first row matters in practice only slightly. It makes `SR0` a little too high, so the deflated Sharpe ratio is slightly conservative. In the simulation below the mean best Sharpe ratio among 1,000 skill-less strategies was 1.451 and the mean `SR0` was 1.457.
+
+Formulas whose statement in the source is ambiguous or inconsistent, and what the code does, are listed under "Where the code departs" in sections 3, 5 and 6.
+
+Not compared, because the sources give no number to compare with: the effective number of trials (BLdP14 eq. 9), the performance degradation regression, and everything in section 7. BBLZ17's own PBO examples run on a simulated seasonal strategy whose random series is not published, so their 55% cannot be reproduced.
+
+## 9. Simulations run here
+
+All from `scripts/reproduce.py` with fixed seeds. Returns are independent Normal draws.
+
+### Sampling distribution of the PBO estimate (`results/pbo_sampling.csv`)
+
+50 strategies, 1,000 observations, 10 blocks (252 splits), 300 datasets per row. Strategy 0 has the per-observation Sharpe ratio shown; the others have none.
+
+| Sharpe ratio of strategy 0 | Mean PBO | Standard deviation | 2.5% to 97.5% of estimates |
+|---|---|---|---|
+| 0 | 0.493 | 0.181 | 0.13 to 0.84 |
+| 0.1 | 0.275 | 0.178 | 0.02 to 0.68 |
+| 0.2 | 0.013 | 0.029 | 0.00 to 0.11 |
+| 0.3 | 0.0001 | 0.0007 | 0.00 to 0.00 |
+
+BBLZ17 section 4 says that when the backtest carries no information the logits are roughly standard Normal, which implies a PBO near 0.5. The mean here is 0.493 with a standard error of 0.010, which agrees. A single estimate is another matter: its standard deviation is 0.18, because the 252 splits reuse the same data and are far from independent. BBLZ17 section 4 computes the precision of PBO as if the splits were independent draws ("σ[f(λ)] < 0.0045" for S = 16). That is the precision of the count given the dataset. It is much smaller than the variation from one dataset to another.
+
+These numbers set the test tolerances in `tests/test_pbo.py`:
+
+- Pure noise: the mean of 200 estimates must be within 0.05 of 0.5. The standard error of that mean is `0.18/sqrt(200) = 0.013`, so the tolerance is about four standard errors.
+- Real drift: with a per-observation Sharpe ratio of 0.3 every one of 50 estimates must be below 0.02. In the table above the largest of 300 was 0.012 and 299 were zero. With the test's seed the largest of the 50 is 0.004 and the mean of the 200 noise estimates is 0.511.
+
+### The 1,000-strategy experiment (`results/headline.csv`, `results/monte_carlo.csv`)
+
+1,000 strategies, 1,260 daily observations, daily volatility 1%, 252 days per year. One seed for the headline tables, then 200 fresh datasets for each of four cases in which strategy 0 has a true annualised Sharpe ratio of 0, 1, 2 or 3 and the other 999 have none. In each dataset the strategy with the highest full-sample Sharpe ratio is selected and every tool is applied to it. CSCV uses 16 blocks. CPCV uses 6 groups, 2 test groups and a 5-day embargo, and its "model" is the rule "trade the strategy with the best Sharpe ratio on the training set".
+
+| True Sharpe of strategy 0 | Mean Sharpe of the winner | Winner is strategy 0 | Single test p < 0.05 | PSR(0) > 0.95 | DSR > 0.95 | Bonferroni p < 0.05 | BHY p < 0.05 | PBO mean (sd) | PBO < 0.05 | Mean CPCV path Sharpe |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 0 | 1.45 | 0% | 100% | 100% | 0% | 2% | 0% | 0.50 (0.10) | 0% | 0.02 |
+| 1 | 1.52 | 20% | 100% | 100% | 0% | 8% | 2% | 0.47 (0.12) | 0% | 0.16 |
+| 2 | 2.01 | 89% | 100% | 100% | 28% | 70% | 49% | 0.27 (0.14) | 4% | 1.26 |
+| 3 | 2.99 | 100% | 100% | 100% | 96% | 100% | 100% | 0.04 (0.06) | 71% | 2.93 |
+
+Percentages are shares of the 200 datasets. With 200 datasets a share near 50% has a standard error of about 3.5 points. Holm gave the same shares as Bonferroni in every row.
+
+## 10. Variants tried
+
+The standard for this repository asks for a count of everything that was tried, so that the results cannot have been tuned.
+
+- The headline experiment was run with one configuration (1,000 strategies, five years of daily returns, seed 20261123, control strategy with a true Sharpe ratio of 2). The configuration was fixed before the first run and never changed. No other seed was tried.
+- The Monte Carlo levels (0, 1, 2, 3) and the decision thresholds (0.95 for PSR and DSR, 0.05 for p-values and for PBO) were fixed before the first run.
+- The PBO sampling configuration (50 strategies, 1,000 observations, 10 blocks) was the first one tried. It was run once informally with a different seed before the committed run; the two agreed (mean 0.517 and 0.493 under noise).
+- Two tests were changed after failing on first run. A check of the expected-maximum formula against simulation had tolerances taken from the paper's Exhibit 3.1 and failed at N = 100; it was replaced with a comparison against the exact integral, which is how the first mismatch in section 8 was found. An input-validation test for `cscv` used an input that is in fact valid.
+- Figures were restyled once (a clipped title and a legend that covered the bars). No data changed.
+- `scripts/reproduce.py` was run in full three times. The tables were identical each time.
