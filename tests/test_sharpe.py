@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import itertools
 import math
 
 import numpy as np
@@ -140,7 +141,7 @@ def test_expected_max_against_exact_integral() -> None:
 def test_expected_max_small_n_and_bound() -> None:
     assert expected_max_standard_normal(1) == 0.0
     values = [expected_max_standard_normal(n) for n in (1, 1.25, 1.5, 2, 3, 10, 100, 1e6)]
-    assert all(b > a for a, b in zip(values, values[1:], strict=False))
+    assert all(b > a for a, b in itertools.pairwise(values))
     for n in (2, 10, 1000, 10**6):
         assert expected_max_standard_normal(n) < math.sqrt(2 * math.log(n))
     with pytest.raises(ValueError):
@@ -187,7 +188,7 @@ def test_dsr_equals_psr_for_one_trial() -> None:
 def test_dsr_decreases_with_trials_and_variance() -> None:
     args = (0.12, 1000)
     dsrs = [deflated_sharpe_ratio(*args, n, 0.002) for n in (1, 2, 10, 100, 1000)]
-    assert all(b < a for a, b in zip(dsrs, dsrs[1:], strict=False))
+    assert all(b < a for a, b in itertools.pairwise(dsrs))
     assert deflated_sharpe_ratio(*args, 100, 0.004) < deflated_sharpe_ratio(*args, 100, 0.002)
 
 
