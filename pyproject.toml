@@ -47,3 +47,7 @@ ignore = [
 python_version = "3.12"
 strict = true
 warn_unused_ignores = true
+
+[[tool.mypy.overrides]]
+module = "scipy.*"
+ignore_missing_imports = true
