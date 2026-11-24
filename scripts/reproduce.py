@@ -3,13 +3,19 @@
     uv run python scripts/reproduce.py            # full run, writes results/
     uv run python scripts/reproduce.py --fast     # small run for CI, writes results_fast/
 
-Everything is simulated from fixed seeds, so two runs give identical tables.
+The simulated experiments use fixed seeds. The real-data experiments use the
+daily market excess return from Kenneth French's data library up to
+2025-12-31 (downloaded by scripts/fetch_data.py into data/, not committed),
+with fixed seeds for the random signs. Two runs on the same download give
+identical tables.
 """
 
 from __future__ import annotations
 
 import argparse
+import hashlib
 import math
+import sys
 import time
 from collections.abc import Callable
 from pathlib import Path
@@ -38,6 +44,12 @@ from procrustes import (
     sharpe_ratio,
 )
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+import fetch_data
+import leakage
+import trend_family as tf
+
 FloatArray = NDArray[np.float64]
 
 SEED = 20261123
@@ -45,7 +57,7 @@ PERIODS = 252  # trading days per year
 N_OBS = 5 * PERIODS  # five years of daily returns
 N_STRATEGIES = 1000
 DAILY_VOL = 0.01
-CPCV_GROUPS, CPCV_TEST_GROUPS = 6, 2
+CV_GROUPS, CV_TEST_GROUPS = 6, 2
 CONTROL_SHARPE = 2.0  # annualised true Sharpe ratio of the one real strategy in the control
 
 
@@ -64,10 +76,14 @@ def simulate(
     return r
 
 
-def cpcv_path_returns(returns: FloatArray) -> FloatArray:
+def cv_path_returns(returns: FloatArray) -> FloatArray:
     """Out-of-sample return paths of the rule "trade the strategy with the best
-    Sharpe ratio on the training set", under combinatorial purged CV."""
-    cv = CombinatorialPurgedKFold(CPCV_GROUPS, CPCV_TEST_GROUPS, embargo=5)
+    Sharpe ratio on the training set", under combinatorial CV with a 5-day embargo.
+
+    Each sample's label is one day's return, so no two labels overlap and purging
+    removes nothing here. Only the embargo drops training days. The demonstration
+    of purging is in ``leakage_demo``."""
+    cv = CombinatorialPurgedKFold(CV_GROUPS, CV_TEST_GROUPS, embargo=5)
     forecasts = []
     for train, test in cv.split(returns):
         pick = int(np.argmax(sharpe_ratio(returns[train])))
@@ -84,7 +100,7 @@ def evaluate(returns: FloatArray, n_blocks: int) -> tuple[dict[str, float], PBOR
     t_stats = srs * math.sqrt(n_obs)
     best = dsr.selected
     pbo = cscv(returns, n_blocks)
-    paths = cpcv_path_returns(returns)
+    paths = cv_path_returns(returns)
     path_sharpes = sharpe_ratio(paths, axis=1) * ann
     best_ann = dsr.sharpe * ann
     row = {
@@ -104,9 +120,9 @@ def evaluate(returns: FloatArray, n_blocks: int) -> tuple[dict[str, float], PBOR
         "p_bonferroni": float(adjust_t_statistics(t_stats, "bonferroni").adjusted_p_values[best]),
         "p_holm": float(adjust_t_statistics(t_stats, "holm").adjusted_p_values[best]),
         "p_bhy": float(adjust_t_statistics(t_stats, "bhy").adjusted_p_values[best]),
-        "cpcv_path_sharpe_mean_ann": float(path_sharpes.mean()),
-        "cpcv_path_sharpe_min_ann": float(path_sharpes.min()),
-        "cpcv_path_sharpe_max_ann": float(path_sharpes.max()),
+        "cv_path_sharpe_mean_ann": float(path_sharpes.mean()),
+        "cv_path_sharpe_min_ann": float(path_sharpes.min()),
+        "cv_path_sharpe_max_ann": float(path_sharpes.max()),
     }
     return row, pbo, paths
 
@@ -153,9 +169,13 @@ HEADLINE_LABELS = [
     ("p_bonferroni", "Bonferroni adjusted p-value", "{:.3g}"),
     ("p_holm", "Holm adjusted p-value", "{:.3g}"),
     ("p_bhy", "BHY adjusted p-value", "{:.3g}"),
-    ("cpcv_path_sharpe_mean_ann", "Mean annualised Sharpe ratio of the CPCV paths", "{:.2f}"),
-    ("cpcv_path_sharpe_min_ann", "Lowest CPCV path Sharpe ratio", "{:.2f}"),
-    ("cpcv_path_sharpe_max_ann", "Highest CPCV path Sharpe ratio", "{:.2f}"),
+    (
+        "cv_path_sharpe_mean_ann",
+        "Mean annualised Sharpe ratio of the 5 combinatorial CV paths",
+        "{:.2f}",
+    ),
+    ("cv_path_sharpe_min_ann", "Lowest combinatorial CV path Sharpe ratio", "{:.2f}"),
+    ("cv_path_sharpe_max_ann", "Highest combinatorial CV path Sharpe ratio", "{:.2f}"),
 ]
 
 
@@ -205,7 +225,7 @@ MC_MEANS = [
     "dsr",
     "pbo",
     "prob_oos_loss",
-    "cpcv_path_sharpe_mean_ann",
+    "cv_path_sharpe_mean_ann",
 ]
 
 
@@ -247,7 +267,7 @@ def monte_carlo(
                 f"{d['share_bhy_p<0.05']:.0%}",
                 f"{d['mean_pbo']:.2f} ({d['sd_pbo']:.2f})",
                 f"{d['share_pbo<0.05']:.0%}",
-                f"{d['mean_cpcv_path_sharpe_mean_ann']:.2f}",
+                f"{d['mean_cv_path_sharpe_mean_ann']:.2f}",
             ]
         )
     write_md(
@@ -263,7 +283,7 @@ def monte_carlo(
             "BHY p < 0.05",
             "PBO mean (sd)",
             "PBO < 0.05",
-            "Mean CPCV path Sharpe",
+            "Mean combinatorial CV path Sharpe",
         ],
         md_rows,
     )
@@ -332,7 +352,6 @@ def paper_examples(out: Path) -> None:
     def trl(q: int, skew: float = 0.0, kurt: float = 3.0) -> float:
         return min_track_record_length(2 / math.sqrt(q), 1 / math.sqrt(q), skew, kurt) / q
 
-    cp = CombinatorialPurgedKFold(6, 2)
     rows: list[tuple[str, str, str, float]] = [
         (
             "BLdP12 s.3",
@@ -427,8 +446,6 @@ def paper_examples(out: Path) -> None:
         ),
         ("HLZ16 Table 4", "Holm discoveries, from the t-statistics", "4", float(n_rej("holm"))),
         ("HLZ16 Table 4", "BHY discoveries, from the t-statistics", "6", float(n_rej("bhy"))),
-        ("AFML ch. 12 (secondary)", "CPCV splits, N = 6, k = 2", "15", float(cp.get_n_splits())),
-        ("AFML ch. 12 (secondary)", "CPCV paths, N = 6, k = 2", "5", float(cp.n_paths)),
     ]
     write_csv(
         out / "paper_examples.csv",
@@ -439,6 +456,270 @@ def paper_examples(out: Path) -> None:
         out / "paper_examples.md",
         ["Source", "Quantity", "Paper", "This library"],
         [[s, q, p, f"{v:,.0f}" if v > 1000 else f"{v:.5g}"] for s, q, p, v in rows],
+    )
+
+
+# --------------------------------------------------------------------------------------
+# real data: a correlated family of trend rules, and leakage through overlapping labels
+# --------------------------------------------------------------------------------------
+
+
+def data_fingerprint(out: Path, m: fetch_data.MarketSeries) -> None:
+    text = "".join(f"{d},{x * 100:.2f}\n" for d, x in zip(m.dates, m.excess, strict=True))
+    write_csv(
+        out / "data_fingerprint.csv",
+        ["first_date", "last_date", "n_days", "sum_excess_pct", "sha256_of_date_value_lines"],
+        [
+            [
+                int(m.dates[0]),
+                int(m.dates[-1]),
+                int(m.dates.size),
+                f"{float(np.round(m.excess * 100, 2).sum()):.2f}",
+                hashlib.sha256(text.encode()).hexdigest(),
+            ]
+        ],
+    )
+
+
+def _share_above(x: FloatArray, level: float = 0.95) -> float:
+    return float(np.mean(x > level))
+
+
+FAMILY_HEADER = [
+    "start",
+    "end",
+    "n_rules",
+    "real_avg_corr",
+    "real_n_effective",
+    "real_best_rule",
+    "real_best_sharpe_ann",
+    "real_sr0_raw_ann",
+    "real_sr0_adj_ann",
+    "real_dsr_raw",
+    "real_dsr_adj",
+    "null_reps",
+    "null_avg_corr_mean",
+    "null_n_effective_mean",
+    "null_best_sharpe_ann_mean",
+    "null_sr0_raw_ann_mean",
+    "null_sr0_adj_ann_mean",
+    "null_implied_trials",
+    "size_raw",
+    "size_adj",
+    "market_lag1_autocorr",
+]
+
+
+def _window_row(m: fetch_data.MarketSeries, r: tf.WindowRun, reps: int) -> list[Any]:
+    ann = math.sqrt(PERIODS)
+    f, sl = tf.RULES[r.real_verdict.best]
+    sd_mean = float(np.mean(np.sqrt(r.null_sr_var)))
+    sr0_raw = [expected_max_sharpe(len(tf.RULES), v) for v in r.null_sr_var]
+    sr0_adj = [expected_max_sharpe(n, v) for n, v in zip(r.null_n_eff, r.null_sr_var, strict=True)]
+    return [
+        int(m.dates[r.a]),
+        int(m.dates[r.b - 1]),
+        len(tf.RULES),
+        r.real.avg_corr,
+        r.real.n_effective,
+        f"{f}/{sl}",
+        r.real_verdict.best_sr * ann,
+        r.real_verdict.sr0_raw * ann,
+        r.real_verdict.sr0_adj * ann,
+        r.real_verdict.dsr_raw,
+        r.real_verdict.dsr_adj,
+        reps,
+        float(r.null_avg_corr.mean()),
+        float(r.null_n_eff.mean()),
+        float(r.null_best_sr.mean()) * ann,
+        float(np.mean(sr0_raw)) * ann,
+        float(np.mean(sr0_adj)) * ann,
+        tf.implied_trials(float(r.null_best_sr.mean()), sd_mean**2),
+        _share_above(r.null_dsr_raw),
+        _share_above(r.null_dsr_adj),
+        float(np.corrcoef(m.excess[r.a : r.b - 1], m.excess[r.a + 1 : r.b])[0, 1]),
+    ]
+
+
+def trend_family(out: Path, m: fetch_data.MarketSeries, fast: bool) -> dict[str, Any]:
+    """Size and power of the deflated Sharpe ratio on a real correlated family,
+    with N = number of rules and with N̂ from BLdP14 eq. (9)."""
+    ann = math.sqrt(PERIODS)
+    wins = tf.windows(m.excess.size, 2 if fast else None)
+    reps = 10 if fast else 500
+    seeds = np.random.SeedSequence(SEED + 3).spawn(len(wins))
+    runs = []
+    for (a, b), seed in zip(wins, seeds, strict=True):
+        runs.append(tf.run_window(m.excess, a, b, reps, np.random.default_rng(seed)))
+        print(f"  trend family: window ending {m.dates[b - 1]} done ({reps} datasets)", flush=True)
+    rows = [_window_row(m, r, reps) for r in runs]
+    write_csv(out / "family_windows.csv", FAMILY_HEADER, rows)
+
+    # the whole span of the windows, real data only
+    a0, b0 = runs[0].a, runs[-1].b
+    whole = tf.family_stats(tf.rule_returns(m.excess[a0 - tf.WARMUP : b0]))
+    wv = tf.verdict(whole)
+
+    # Pooled size and power. The oracle threshold is the 95% quantile of the null
+    # DSR (with N) from the first half of each window's datasets; it is applied to
+    # the second half.
+    half = reps // 2
+    null_raw = np.concatenate([r.null_dsr_raw for r in runs])
+    null_adj = np.concatenate([r.null_dsr_adj for r in runs])
+    thresholds = [float(np.quantile(r.null_dsr_raw[:half], 0.95)) for r in runs]
+
+    def oracle(values: list[FloatArray]) -> float:
+        hits = [v[half:] > t for v, t in zip(values, thresholds, strict=True)]
+        return float(np.mean(np.concatenate(hits)))
+
+    p_header = [
+        "planted_sharpe_ann",
+        "datasets",
+        "planted_rule_selected",
+        "pass_raw",
+        "pass_adj",
+        "pass_oracle",
+    ]
+    p_rows: list[list[Any]] = [
+        [
+            0.0,
+            null_raw.size,
+            math.nan,
+            _share_above(null_raw),
+            _share_above(null_adj),
+            oracle([r.null_dsr_raw for r in runs]),
+        ]
+    ]
+    for k, level in enumerate(tf.PLANTED):
+        raw = np.concatenate([r.power_dsr_raw[k] for r in runs])
+        adj = np.concatenate([r.power_dsr_adj[k] for r in runs])
+        hit = np.concatenate([r.power_hit[k] for r in runs])
+        p_rows.append(
+            [
+                level,
+                raw.size,
+                float(hit.mean()),
+                _share_above(raw),
+                _share_above(adj),
+                oracle([r.power_dsr_raw[k] for r in runs]),
+            ]
+        )
+    write_csv(out / "family_power.csv", p_header, p_rows)
+
+    lines = [
+        f"{len(tf.RULES)} moving-average rules, {len(runs)} non-overlapping five-year windows "
+        f"from {m.dates[a0]} to {m.dates[b0 - 1]}, {reps} sign-randomised datasets per window.",
+        "",
+        "| Planted true Sharpe (annualised) | Planted rule is the best | DSR > 0.95 with N "
+        "| DSR > 0.95 with N̂ (eq. 9) | Oracle threshold |",
+        "|---|---|---|---|---|",
+    ]
+    for lv, _, hit, praw, padj, porc in p_rows:
+        shown = "" if math.isnan(hit) else f"{hit:.0%}"
+        lines.append(f"| {lv:g} | {shown} | {praw:.1%} | {padj:.1%} | {porc:.1%} |")
+    lines += [
+        "",
+        "| Window | Avg corr | N̂ | Null best SR | SR0 with N | SR0 with N̂ | Implied N "
+        "| Size with N | Size with N̂ | Real best rule | Real best SR | Real DSR (N) "
+        "| Real DSR (N̂) | Market lag-1 autocorrelation |",
+        "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|",
+    ]
+    for row in rows:
+        d = dict(zip(FAMILY_HEADER, row, strict=True))
+        lines.append(
+            f"| {str(d['start'])[:4]}-{str(d['end'])[:4]} | {d['null_avg_corr_mean']:.2f} "
+            f"| {d['null_n_effective_mean']:.0f} | {d['null_best_sharpe_ann_mean']:.2f} "
+            f"| {d['null_sr0_raw_ann_mean']:.2f} | {d['null_sr0_adj_ann_mean']:.2f} "
+            f"| {d['null_implied_trials']:.1f} | {d['size_raw']:.1%} | {d['size_adj']:.1%} "
+            f"| {d['real_best_rule']} | {d['real_best_sharpe_ann']:.2f} "
+            f"| {d['real_dsr_raw']:.3f} | {d['real_dsr_adj']:.3f} "
+            f"| {d['market_lag1_autocorr']:.3f} |"
+        )
+    f, sl = tf.RULES[wv.best]
+    lines += [
+        "",
+        f"All windows together, real data: average correlation {whole.avg_corr:.2f}, "
+        f"N̂ {whole.n_effective:.0f}, best rule {f}/{sl} with an annualised Sharpe ratio of "
+        f"{wv.best_sr * ann:.2f}, DSR {wv.dsr_raw:.4f} with N and {wv.dsr_adj:.4f} with N̂.",
+    ]
+    (out / "family.md").write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
+    return {"runs": runs, "rows": rows, "power": p_rows, "dates": m.dates}
+
+
+LEAKAGE_HEADER = [
+    "data",
+    "rep",
+    "n_samples",
+    "shuffled_kfold_corr",
+    "cv_no_purge_path_corr",
+    "cv_purged_path_corr",
+    "cv_no_purge_edge_corr",
+    "cv_purged_edge_corr",
+    "edge_samples",
+    "train_size_no_purge",
+    "train_size_purged",
+]
+
+
+def leakage_demo(out: Path, m: fetch_data.MarketSeries, fast: bool) -> None:
+    """Overlapping labels: shuffled k-fold, combinatorial CV without purging, and
+    with purging and an embargo, on the real series and on sign-randomised copies."""
+    start = 20160101 if fast else 19900101
+    x = m.excess[m.dates >= start]
+    reps = 2 if fast else 20
+    rng = np.random.default_rng(np.random.SeedSequence(SEED + 4))
+    cases: list[tuple[str, FloatArray]] = [("real", x)]
+    cases += [("null", x * rng.choice(np.array([-1.0, 1.0]), size=x.size)) for _ in range(reps)]
+    rows: list[list[Any]] = []
+    for i, (name, series) in enumerate(cases):
+        feats, labels = leakage.make_dataset(series)
+        plain = leakage.cpcv_score(feats, labels, purge=False)
+        purged = leakage.cpcv_score(feats, labels, purge=True)
+        rows.append(
+            [
+                name,
+                i,
+                labels.size,
+                leakage.shuffled_kfold_corr(feats, labels, seed=i),
+                float(plain.path_corr.mean()),
+                float(purged.path_corr.mean()),
+                plain.edge_corr,
+                purged.edge_corr,
+                plain.n_edge,
+                plain.train_size,
+                purged.train_size,
+            ]
+        )
+    print("  leakage demo done", flush=True)
+    write_csv(out / "leakage.csv", LEAKAGE_HEADER, rows)
+
+    null = np.array([r[3:8] for r in rows if r[0] == "null"], dtype=np.float64)
+    real = np.array(rows[0][3:8], dtype=np.float64)
+    se = null.std(axis=0, ddof=1) / math.sqrt(null.shape[0])
+    names = [
+        "Shuffled 5-fold CV",
+        "Combinatorial CV, no purging, whole paths",
+        "Combinatorial CV, purged and embargoed, whole paths",
+        "Combinatorial CV, no purging, test days within 20 days of a training group",
+        "Combinatorial CV, purged and embargoed, the same test days",
+    ]
+    md = [
+        [name, f"{real[k]:.3f}", f"{null[:, k].mean():.3f} ({se[k]:.3f})"]
+        for k, name in enumerate(names)
+    ]
+    for label, d in (
+        ("No purging minus purged, whole paths", null[:, 1] - null[:, 2]),
+        ("No purging minus purged, test days near a training group", null[:, 3] - null[:, 4]),
+    ):
+        md.append([label, "", f"{d.mean():.4f} ({d.std(ddof=1) / math.sqrt(d.size):.4f})"])
+    write_md(
+        out / "leakage.md",
+        [
+            "Correlation of forecast and 20-day label",
+            f"Real data from {start}",
+            f"Sign-randomised, mean of {reps} (standard error)",
+        ],
+        md,
     )
 
 
@@ -574,7 +855,7 @@ def figures(out: Path, h: dict[str, Any], n_strategies: int) -> None:
     fig.savefig(out / "min_backtest_length.png")
     plt.close(fig)
 
-    # 5. CPCV paths against the in-sample curve of the selected strategy
+    # 5. combinatorial CV paths against the in-sample curve of the selected strategy
     fig, ax = plt.subplots(figsize=(7, 3.8))
     years = np.arange(1, N_OBS + 1) / PERIODS
     best = int(np.argmax(srs))
@@ -593,21 +874,79 @@ def figures(out: Path, h: dict[str, Any], n_strategies: int) -> None:
             color=BLUE,
             lw=1,
             alpha=0.8,
-            label="same selection rule, out of sample (CPCV paths)" if i == 0 else None,
+            label="same selection rule, out of sample (combinatorial CV paths)" if i == 0 else None,
         )
     ax.axhline(0, color=GREY, lw=1)
     ax.set_xlabel("Years")
     ax.set_ylabel("Cumulative return, % (sum of daily returns)")
     ax.legend(frameon=False, fontsize=9)
     fig.tight_layout()
-    fig.savefig(out / "cpcv_paths.png")
+    fig.savefig(out / "cv_paths.png")
+    plt.close(fig)
+
+
+def family_figure(out: Path, fam: dict[str, Any]) -> None:
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10, 4))
+    power = fam["power"]
+    labels = ["no edge\n(false positives)"] + [f"true Sharpe {p[0]:g}" for p in power[1:]]
+    xs = np.arange(len(power))
+    width = 0.27
+    for k, (col, name, color) in enumerate(
+        [
+            (3, "N = number of rules", BLUE),
+            (4, "N̂ from the average correlation", ORANGE),
+            (5, "threshold from the null itself", GREY),
+        ]
+    ):
+        ax1.bar(xs + (k - 1) * width, [100 * p[col] for p in power], width, color=color, label=name)
+    ax1.axhline(5, color="black", lw=0.8, ls=":")
+    ax1.set_xticks(xs, labels)
+    ax1.set_ylabel("% of datasets where the best rule passes")
+    ax1.set_title("Deflated Sharpe ratio > 0.95 on the rule family", loc="left")
+    ax1.legend(frameon=False, fontsize=8, loc="upper left")
+
+    rows = fam["rows"]
+    idx = {k: i for i, k in enumerate(FAMILY_HEADER)}
+    years = [int(str(r[idx["end"]])[:4]) for r in rows]
+    ax2.plot(
+        years,
+        [r[idx["null_best_sharpe_ann_mean"]] for r in rows],
+        "o-",
+        color="black",
+        label="best rule under the null (mean)",
+    )
+    ax2.plot(
+        years,
+        [r[idx["null_sr0_raw_ann_mean"]] for r in rows],
+        "s--",
+        color=BLUE,
+        label="SR0 with N",
+    )
+    ax2.plot(
+        years,
+        [r[idx["null_sr0_adj_ann_mean"]] for r in rows],
+        "^--",
+        color=ORANGE,
+        label="SR0 with N̂",
+    )
+    ax2.set_xlabel("Last year of the five-year window")
+    ax2.set_ylabel("Annualised Sharpe ratio")
+    ax2.set_title("Best rule when no rule has an edge", loc="left")
+    ax2.legend(frameon=False, fontsize=8)
+    fig.tight_layout()
+    fig.savefig(out / "family.png")
     plt.close(fig)
 
 
 # --------------------------------------------------------------------------------------
 
 
-def run(out: Path, fast: bool = False, make_figures: bool = True) -> None:
+def run(out: Path, fast: bool = False, make_figures: bool = True, real_data: bool = True) -> None:
     out.mkdir(parents=True, exist_ok=True)
     started = time.time()
     n_strategies = 200 if fast else N_STRATEGIES
@@ -625,8 +964,16 @@ def run(out: Path, fast: bool = False, make_figures: bool = True) -> None:
         n_strategies=n_strategies,
         n_blocks=n_blocks,
     )
+    fam: dict[str, Any] | None = None
+    if real_data:
+        market = fetch_data.load_market()
+        data_fingerprint(out, market)
+        fam = trend_family(out, market, fast)
+        leakage_demo(out, market, fast)
     if make_figures:
         figures(out, h, n_strategies)
+        if fam is not None:
+            family_figure(out, fam)
     print(f"done in {time.time() - started:.0f}s", flush=True)
 
 

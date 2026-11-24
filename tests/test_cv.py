@@ -135,7 +135,7 @@ def test_number_of_paths(n_groups: int, k: int) -> None:
 
 
 def test_six_groups_two_tested_is_fifteen_splits_and_five_paths() -> None:
-    """The worked case in the public descriptions of AFML chapter 12."""
+    """N = 6, k = 2: C(6, 2) = 15 splits and (2/6)·15 = 5 paths."""
     cv = CombinatorialPurgedKFold(6, 2)
     assert cv.get_n_splits() == 15
     assert cv.n_paths == 5

@@ -1,0 +1,5 @@
+planted_sharpe_ann,datasets,planted_rule_selected,pass_raw,pass_adj,pass_oracle
+0,10000,nan,0.0066,0.0123,0.0528
+1,10000,0.7942,0.1082,0.1505,0.3214
+2,10000,0.9962,0.7669,0.8122,0.9134
+3,10000,1,0.9875,0.9921,0.998

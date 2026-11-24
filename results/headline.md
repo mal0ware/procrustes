@@ -13,6 +13,6 @@
 | Bonferroni adjusted p-value | 1 | 0.233 |
 | Holm adjusted p-value | 1 | 0.233 |
 | BHY adjusted p-value | 1 | 1 |
-| Mean annualised Sharpe ratio of the CPCV paths | -0.07 | 0.26 |
-| Lowest CPCV path Sharpe ratio | -0.44 | -0.49 |
-| Highest CPCV path Sharpe ratio | 0.13 | 1.48 |
+| Mean annualised Sharpe ratio of the 5 combinatorial CV paths | -0.07 | 0.26 |
+| Lowest combinatorial CV path Sharpe ratio | -0.44 | -0.49 |
+| Highest combinatorial CV path Sharpe ratio | 0.13 | 1.48 |

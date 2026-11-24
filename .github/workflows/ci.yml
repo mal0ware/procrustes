@@ -17,6 +17,8 @@ jobs:
       - run: uv run ruff check .
       - run: uv run ruff format --check .
       - run: uv run mypy src
+      - name: Download the public data (Kenneth French data library)
+        run: uv run python scripts/fetch_data.py
       - run: uv run pytest
       - name: Smoke run of reproduce
         run: uv run python scripts/reproduce.py --fast

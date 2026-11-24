@@ -12,7 +12,7 @@ prob_oos_loss,0.508392,0.4662
 p_bonferroni,1,0.232967
 p_holm,1,0.232967
 p_bhy,1,1
-cpcv_path_sharpe_mean_ann,-0.0693273,0.261891
-cpcv_path_sharpe_min_ann,-0.443622,-0.490362
-cpcv_path_sharpe_max_ann,0.129866,1.48257
+cv_path_sharpe_mean_ann,-0.0693273,0.261891
+cv_path_sharpe_min_ann,-0.443622,-0.490362
+cv_path_sharpe_max_ann,0.129866,1.48257
 degradation_slope,-0.413504,-0.340008

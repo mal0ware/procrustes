@@ -1,9 +1,9 @@
 """Purged k-fold and combinatorial purged cross-validation.
 
-The methods are from López de Prado, Advances in Financial Machine Learning
-(2018), chapters 7 and 12. The book was not available; this module is written
-from public descriptions of it (see PAPER.md section 7) and no code was taken
-from any other implementation.
+The ideas are from López de Prado, Advances in Financial Machine Learning
+(2018), chapters 7 and 12. I have not read the book. This module is my
+implementation of the published idea; the choices it makes are listed in
+PAPER.md section 7. No code was taken from any other implementation.
 
 Both splitters follow the scikit-learn cross-validator protocol by duck
 typing: ``split(X, y=None, groups=None)`` yields ``(train, test)`` index

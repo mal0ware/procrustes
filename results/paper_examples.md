@@ -28,5 +28,3 @@
 | HLZ16 Table 4 | Bonferroni discoveries, from the t-statistics | 3 | 3 |
 | HLZ16 Table 4 | Holm discoveries, from the t-statistics | 4 | 6 |
 | HLZ16 Table 4 | BHY discoveries, from the t-statistics | 6 | 6 |
-| AFML ch. 12 (secondary) | CPCV splits, N = 6, k = 2 | 15 | 15 |
-| AFML ch. 12 (secondary) | CPCV paths, N = 6, k = 2 | 5 | 5 |

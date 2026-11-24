@@ -1,21 +1,21 @@
 # Sources, formulas and comparison
 
-Every formula in `src/procrustes/` is listed here with the place it comes from. The formulas were written into this file from the sources before the code was written.
+Every formula in `src/procrustes/` is listed here with the place it comes from. The formulas went into this file in the first commit after the skeleton (6fe1b9e), before the library code (dc1f226).
 
 Notation: `Z` is the standard Normal CDF, `Z^-1` its inverse, `γ ≈ 0.5772156649` the Euler-Mascheroni constant, `e` Euler's number. Sharpe ratios are per observation (not annualised) unless a line says otherwise. Kurtosis `γ4` is the raw fourth standardised moment, so a Normal distribution has `γ4 = 3`.
 
-## 1. Sources read
+## 1. Sources
 
-| Key | Citation | Copy read |
+| Key | Citation | Copy used |
 |---|---|---|
 | BLdP12 | Bailey and López de Prado, "The Sharpe Ratio Efficient Frontier", Journal of Risk 15(2), 2012 | Authors' preprint, `davidhbailey.com/dhbpapers/sharpe-frontier.pdf`, 46 pages |
 | BLdP14 | Bailey and López de Prado, "The Deflated Sharpe Ratio: Correcting for Selection Bias, Backtest Overfitting and Non-Normality", Journal of Portfolio Management 40(5), 2014 | SSRN 2460551 preprint dated 31 July 2014, `davidhbailey.com/dhbpapers/deflated-sharpe.pdf`, 22 pages |
 | BBLZ14 | Bailey, Borwein, López de Prado and Zhu, "Pseudo-Mathematics and Financial Charlatanism: The Effects of Backtest Overfitting on Out-of-Sample Performance", Notices of the AMS 61(5), May 2014, pp. 458-471 | Published version, `ams.org/notices/201405/rnoti-p458.pdf` |
 | BBLZ17 | Bailey, Borwein, López de Prado and Zhu, "The Probability of Backtest Overfitting", Journal of Computational Finance 20(4), 2017 | Authors' preprint, `davidhbailey.com/dhbpapers/backtest-prob.pdf`, 34 pages |
 | HLZ16 | Harvey, Liu and Zhu, "... and the Cross-Section of Expected Returns", Review of Financial Studies 29(1), 2016, pp. 5-68 | Published version from Campbell Harvey's Duke page, 64 pages |
-| AFML | López de Prado, Advances in Financial Machine Learning, Wiley, 2018, chapters 7 and 12 | Not read. The book is not freely available. See section 7 for what was used instead. |
+| AFML | López de Prado, Advances in Financial Machine Learning, Wiley, 2018, chapters 7 and 12 | Not read. The cross-validation code is my implementation of the published idea. See section 7. |
 
-BLdP12 was not on the original reading list. BLdP14 defines the deflated Sharpe ratio as a probabilistic Sharpe ratio with a particular benchmark and refers to BLdP12 for the definition, so it had to be read too.
+BLdP14 defines the deflated Sharpe ratio as a probabilistic Sharpe ratio with a particular benchmark and refers to BLdP12 for the definition, which is why BLdP12 is here.
 
 Page and equation numbers below refer to the copies in the table. The journal versions may number pages differently.
 
@@ -147,15 +147,9 @@ HLZ16 applies these to t-statistics by converting each to a two-sided p-value. T
 1. HLZ16 writes the BHY adjusted p-value recursively as `p_(M)^adj = p_(M)` and `p_(i)^adj = min[ p_(i+1)^adj, (M·c(M)/i)·p_(i) ]`. The first line is inconsistent with the paper's own rejection rule, which rejects `H_(M)` only when `p_(M) ≤ α_d / c(M)`. The code starts the recursion at `min[ c(M)·p_(M), 1 ]`, which is the Benjamini-Yekutieli adjusted p-value and agrees with the rejection rule for every index.
 2. The code reports a t-statistic hurdle. For Bonferroni it is the t-ratio whose p-value is `α/M`. For Holm and BHY it is the smallest absolute t-statistic among the rejected tests, which matches how Table 4 reports cutoffs ("for Holm is 0.60%, and for BHY is 0.85%" are the largest rejected p-values).
 
-## 7. Purged k-fold, embargo and combinatorial purged cross-validation (AFML, secondary sources)
+## 7. Purged k-fold, embargo and combinatorial purged cross-validation (AFML)
 
-I could not read the book. This section is implemented from public descriptions of chapters 7 and 12:
-
-- The documentation of `skfolio.model_selection.CombinatorialPurgedCV` (skfolio.org), which defines purging as "removing from the training set all observations whose labels overlapped in time with those labels included in the testing set" and embargoing as "removing from the training set all observations that immediately follow an observation in the testing set", and cites AFML.
-- The EverybodyWiki article "Combinatorial Purged Cross-Validation" (a copy of a former Wikipedia article), which states the split count `C(N, k)`, the path count `φ[N, k] = (k/N)·C(N, k)`, and the worked case `N = 6, k = 2` with 15 splits and 5 paths.
-- A Towards AI article, "The Combinatorial Purged Cross-Validation method", which walks through the same `N = 6, k = 2` case and the assignment of test groups to paths.
-
-No code was copied from any of them or from any other implementation.
+I have not read the book. The code is my implementation of the published idea: drop from the training set every sample whose label period overlaps a test label (purging), and also drop the samples just after each test block (embargo); in the combinatorial version, test every combination of k out of N contiguous groups and rebuild full-length out-of-sample paths. No code was copied from any implementation.
 
 What is implemented:
 
@@ -174,17 +168,17 @@ Combinatorial purged: N contiguous groups, every combination of k groups is a te
 
 Each group is in the test set of `C(N - 1, k - 1)` splits. Path `p` takes, for each group, the forecasts from the `p`-th split (in lexicographic order of combinations) that has the group in its test set. Every path then covers every sample once with an out-of-sample forecast.
 
-Points I could not check against the book:
+Choices I made that the book may make differently:
 
-1. Intervals are treated as closed, so a training label that ends at the instant a test label starts counts as overlapping. My recollection is that the book states three overlap conditions with weak inequalities, which is the same thing, but its reference code keeps a training label that ends exactly at the test start. Closed intervals are the conservative reading.
-2. The embargo is applied only after a test block, as both secondary sources describe. The embargo size is in samples. My recollection is that the book suggests about 1% of the sample; no default is taken from it here (the default embargo is zero).
-3. The rule for which split feeds which path is the one shown in the secondary sources' `N = 6, k = 2` table. Any rule that uses each (split, group) pair once gives the same set of out-of-sample forecasts, arranged into paths differently.
+1. Intervals are closed, so a training label that ends at the instant a test label starts counts as overlapping. This is the conservative reading.
+2. The embargo is applied only after a test block. Its size is in samples. The default is zero.
+3. The rule for which split feeds which path is the lexicographic one above. Any rule that uses each (split, group) pair once gives the same set of out-of-sample forecasts, arranged into paths differently.
 
 ## 8. Comparison with the sources
 
 `scripts/reproduce.py` writes every worked number I found in the sources next to the value this library computes, in `results/paper_examples.md`. The tests in `tests/` assert the same values.
 
-Thirty quantities are compared. Twenty-seven agree to the precision the sources print. Three do not:
+Twenty-eight quantities are compared. Twenty-five agree to the precision the sources print. Three do not:
 
 | Source | Quantity | Paper | Here | Likely reason |
 |---|---|---|---|---|
@@ -222,9 +216,9 @@ These numbers set the test tolerances in `tests/test_pbo.py`:
 
 ### The 1,000-strategy experiment (`results/headline.csv`, `results/monte_carlo.csv`)
 
-1,000 strategies, 1,260 daily observations, daily volatility 1%, 252 days per year. One seed for the headline tables, then 200 fresh datasets for each of four cases in which strategy 0 has a true annualised Sharpe ratio of 0, 1, 2 or 3 and the other 999 have none. In each dataset the strategy with the highest full-sample Sharpe ratio is selected and every tool is applied to it. CSCV uses 16 blocks. CPCV uses 6 groups, 2 test groups and a 5-day embargo, and its "model" is the rule "trade the strategy with the best Sharpe ratio on the training set".
+1,000 strategies, 1,260 daily observations, daily volatility 1%, 252 days per year. One seed for the headline tables, then 200 fresh datasets for each of four cases in which strategy 0 has a true annualised Sharpe ratio of 0, 1, 2 or 3 and the other 999 have none. In each dataset the strategy with the highest full-sample Sharpe ratio is selected and every tool is applied to it. CSCV uses 16 blocks. Combinatorial CV uses 6 groups, 2 test groups and a 5-day embargo, and its "model" is the rule "trade the strategy with the best Sharpe ratio on the training set". Each label is one day's return, so no labels overlap and purging removes nothing in this experiment; section 10 has one where it can.
 
-| True Sharpe of strategy 0 | Mean Sharpe of the winner | Winner is strategy 0 | Single test p < 0.05 | PSR(0) > 0.95 | DSR > 0.95 | Bonferroni p < 0.05 | BHY p < 0.05 | PBO mean (sd) | PBO < 0.05 | Mean CPCV path Sharpe |
+| True Sharpe of strategy 0 | Mean Sharpe of the winner | Winner is strategy 0 | Single test p < 0.05 | PSR(0) > 0.95 | DSR > 0.95 | Bonferroni p < 0.05 | BHY p < 0.05 | PBO mean (sd) | PBO < 0.05 | Mean combinatorial CV path Sharpe |
 |---|---|---|---|---|---|---|---|---|---|---|
 | 0 | 1.45 | 0% | 100% | 100% | 0% | 2% | 0% | 0.50 (0.10) | 0% | 0.02 |
 | 1 | 1.52 | 20% | 100% | 100% | 0% | 8% | 2% | 0.47 (0.12) | 0% | 0.16 |
@@ -233,13 +227,58 @@ These numbers set the test tolerances in `tests/test_pbo.py`:
 
 Percentages are shares of the 200 datasets. With 200 datasets a share near 50% has a standard error of about 3.5 points. Holm gave the same shares as Bonferroni in every row.
 
-## 10. Variants tried
+DSR > 0.95 passed in 0 of 200 datasets under the null, so it is not a 5%-level test. To pass, the winner must beat the expected maximum of the skill-less trials by 1.645 of its own standard errors. The best of many skill-less trials rarely lands that far above its expected value, because the maximum of many draws varies much less than a single draw does.
 
-The standard for this repository asks for a count of everything that was tried, so that the results cannot have been tuned.
+## 10. Real-data experiments
 
-- The headline experiment was run with one configuration (1,000 strategies, five years of daily returns, seed 20261123, control strategy with a true Sharpe ratio of 2). The configuration was fixed before the first run and never changed. No other seed was tried.
-- The Monte Carlo levels (0, 1, 2, 3) and the decision thresholds (0.95 for PSR and DSR, 0.05 for p-values and for PBO) were fixed before the first run.
-- The PBO sampling configuration (50 strategies, 1,000 observations, 10 blocks) was the first one tried. It was run once informally with a different seed before the committed run; the two agreed (mean 0.517 and 0.493 under noise).
-- Two tests were changed after failing on first run. A check of the expected-maximum formula against simulation had tolerances taken from the paper's Exhibit 3.1 and failed at N = 100; it was replaced with a comparison against the exact integral, which is how the first mismatch in section 8 was found. An input-validation test for `cscv` used an input that is in fact valid.
-- Figures were restyled once (a clipped title and a legend that covered the bars). No data changed.
-- `scripts/reproduce.py` was run in full three times. The tables were identical each time.
+Data: the daily market excess return (`Mkt-RF`, in percent with two decimals) from the "Fama/French 3 Factors [Daily]" file of Kenneth French's data library, 1926-07-01 to 2025-12-31, 26,151 days. The file used was built from the 202609 CRSP release. `results/data_fingerprint.csv` records a hash of the series.
+
+### A correlated family of trend rules (`results/family*.csv`, `results/family.md`)
+
+Rules: for each pair (f, s) with f in {1, 2, 3, 5, 8, 10, 15, 20, 30, 40, 50, 75, 100}, s in {10, 20, 30, 50, 75, 100, 125, 150, 200, 250, 300} and f < s, compare the f-day and s-day trailing means of the log excess-return index at the close of day t. Hold +1 if the fast mean is higher, -1 if lower, and earn `position × Mkt-RF` on day t+1. 118 rules, no costs.
+
+Windows: 20 non-overlapping windows of 1,260 return days, counted back from 2025-12-31, each with 300 days of history before it for the signals. The first starts 1929-09-10.
+
+Null: multiply every daily return in the window and its history by an independent random sign (+1 or -1 with equal probability), rebuild the index and re-run all 118 rules. Let `ε_t` be the sign and `x_t` the return. A rule's return on day t+1 is `p_t · ε_{t+1} · x_{t+1}`, where `p_t` depends only on `ε_1 x_1, ..., ε_t x_t`. Since `ε_{t+1}` is independent of those and of `x_{t+1}`, the expectation is zero for every rule. 500 datasets per window, 10,000 in all.
+
+Power: in each null dataset one rule, chosen at random, gets a constant daily drift of `S/sqrt(252)` of its own standard deviation, for S = 1, 2, 3. A constant shift changes that rule's Sharpe ratio by exactly `S/sqrt(252)` and leaves its skewness, kurtosis and correlations unchanged, so the DSR can be recomputed without re-running the rules (a test checks this against adding the drift to the returns).
+
+In every dataset the best rule's DSR is computed twice, with N = 118 and with `N^` from BLdP14 eq. (9) using that dataset's average pairwise correlation. The third threshold is the 95% quantile of the null DSR (with N = 118) from the first 250 datasets of each window, applied to the remaining 250.
+
+| Planted true Sharpe (annualised) | Planted rule is the best | DSR > 0.95 with N | DSR > 0.95 with N^ | Threshold from the null |
+|---|---|---|---|---|
+| none | | 0.7% | 1.2% | 5.3% |
+| 1 | 79% | 10.8% | 15.0% | 32.1% |
+| 2 | 100% | 76.7% | 81.2% | 91.3% |
+| 3 | 100% | 98.8% | 99.2% | 99.8% |
+
+Across windows the average correlation of the rules under the null was 0.48 to 0.54 and `N^` was 55 to 62. "Implied N" in `results/family.md` is the N for which `sqrt(V)·E[max_N]` equals the mean best Sharpe ratio under the null in that window. It was 41 to 63. So eq. (9) gives roughly the right count for this family. The DSR still falls short of a 5% rate, and the reason is how its threshold is built (section 9). With N = 118 the threshold sits above the mean null maximum in every window; with `N^` it sits close to it.
+
+On the real data the best rule's DSR passed 0.95 in five windows with N (1942-46, 1951-55, 1960-65, 1965-71, 1971-76) and six with `N^` (adding 1955-60 at 0.951). In each the best rule was the price against its 10-day mean. No window after 1985 passed. Over all 20 windows together the 10-day rule had an annualised Sharpe ratio of 0.76 and a DSR of 1.0000. `results/family.md` lists the lag-1 autocorrelation of the market return in each window next to these results.
+
+### Leakage through overlapping labels (`results/leakage.csv`, `results/leakage.md`)
+
+Sample: daily data from 1990 to 2025-12-31. A sample is a day with 250 days of history and 20 days of label after it, 8,798 samples. Label: the sum of the next 20 days' `Mkt-RF`. Features: trailing sums over 5, 20, 60 and 250 days and the trailing 20-day standard deviation, standardised on each training set. Model: k-nearest-neighbour regression with k = 25 (scikit-learn). Splits: shuffled 5-fold; combinatorial CV with 6 groups and 2 test groups and no purging; the same with label spans `[i+1, i+20]` and a 20-day embargo. Score: the correlation between forecast and label, on each of the 5 rebuilt paths and on the test days within 20 days of a training group. Run on the real series and on 20 sign-randomised copies.
+
+| Correlation of forecast and label | Real | Sign-randomised, mean (standard error) |
+|---|---|---|
+| Shuffled 5-fold | 0.411 | 0.458 (0.006) |
+| Combinatorial, no purging, whole paths | 0.049 | -0.008 (0.013) |
+| Combinatorial, purged and embargoed, whole paths | 0.050 | -0.007 (0.013) |
+| No purging minus purged, whole paths | | -0.0009 (0.0011) |
+| No purging minus purged, test days near a training group | | 0.015 (0.010) |
+
+Purging and the embargo removed 77 of about 5,865 training samples per split. With contiguous groups the leak is confined to the edges of each test group, and on these data I could not separate it from noise. Shuffling puts every test day's neighbours in the training set, and the leak is then large.
+
+## 11. Variants tried
+
+- The simulated headline experiment uses one configuration (1,000 strategies, five years of daily returns, seed 20261123, control strategy with a true Sharpe ratio of 2). I report the one seed I ran.
+- The Monte Carlo levels are 0, 1, 2 and 3, and the thresholds are 0.95 for PSR and DSR and 0.05 for p-values and PBO.
+- The PBO sampling configuration (50 strategies, 1,000 observations, 10 blocks) was run once informally with a different seed before the committed run; the two agreed (mean 0.517 and 0.493 under noise).
+- Two library tests were changed after failing on first run. A check of the expected-maximum formula against simulation had tolerances taken from the paper's Exhibit 3.1 and failed at N = 100; it was replaced with a comparison against the exact integral, which is how the first mismatch in section 8 was found. An input-validation test for `cscv` used an input that is in fact valid.
+- The two worked numbers for combinatorial CV (15 splits and 5 paths at N = 6, k = 2) were dropped from the comparison table in section 8, since they came from descriptions of a book I have not read. The tests still check them as plain combinatorics.
+- Rule family: one grid, one window length, 500 datasets per window and planted levels 1, 2 and 3. Before the full run I timed one window with 20 datasets. I ran the full experiment twice; the second run added the lag-1 autocorrelation column, which I added after seeing which rule won in the early windows (post hoc). The other numbers did not change.
+- Leakage: before the committed run I tried the design on 3 and then 20 sign-randomised copies with another seed. The first look showed no whole-path difference from purging, and I then added the edge-day score and the shuffled k-fold comparison (both post hoc). In that trial the edge-day difference was 0.035 with a standard error of 0.012; in the committed run it is 0.015 (0.010). I report the committed run.
+- A test of the sign-randomised null first used a series with daily autocorrelation 0.3, on which the rules' edge was too weak to clear the test's own bar; it now uses a persistent drift.
+- Figures were restyled after the first run (clipped titles, a legend that covered the bars). No data changed.
+- The final code was run in full twice and both runs wrote identical tables.

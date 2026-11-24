@@ -1,4 +1,4 @@
-true_sharpe_ann,reps,mean_selected_is_real,mean_best_sharpe_ann,mean_expected_max_sharpe_ann,mean_psr_zero,mean_dsr,mean_pbo,mean_prob_oos_loss,mean_cpcv_path_sharpe_mean_ann,sd_best_sharpe_ann,sd_dsr,sd_pbo,share_single_test_p<0.05,share_psr_zero>0.95,share_dsr>0.95,share_pbo<0.05,share_bonferroni_p<0.05,share_holm_p<0.05,share_bhy_p<0.05
+true_sharpe_ann,reps,mean_selected_is_real,mean_best_sharpe_ann,mean_expected_max_sharpe_ann,mean_psr_zero,mean_dsr,mean_pbo,mean_prob_oos_loss,mean_cv_path_sharpe_mean_ann,sd_best_sharpe_ann,sd_dsr,sd_pbo,share_single_test_p<0.05,share_psr_zero>0.95,share_dsr>0.95,share_pbo<0.05,share_bonferroni_p<0.05,share_holm_p<0.05,share_bhy_p<0.05
 0,200,0,1.45087,1.45741,0.99899,0.492989,0.502498,0.502367,0.0157893,0.155961,0.128281,0.100216,1,1,0,0,0.02,0.02,0
 1,200,0.2,1.51773,1.45802,0.999246,0.544856,0.470387,0.46967,0.160959,0.197674,0.148457,0.124296,1,1,0.005,0,0.085,0.085,0.02
 2,200,0.89,2.00848,1.47054,0.999865,0.81913,0.270724,0.270247,1.26013,0.376448,0.176201,0.144172,1,1,0.28,0.045,0.695,0.695,0.49
