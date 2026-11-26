@@ -1,5 +1,7 @@
 # Procrustes
 
+[![ci](https://github.com/mal0ware/procrustes/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/mal0ware/procrustes/actions/workflows/ci.yml)
+
 Tools that check whether a backtest was stretched to fit: the deflated Sharpe ratio, the probability of backtest overfitting, purged cross-validation and multiple-testing adjustments. I test them on simulated strategies and on a real family of 118 correlated trend rules on the US stock market.
 
 ## The result
